@@ -100,6 +100,7 @@ export default function Home() {
   const [serverBusy, setServerBusy] = useState(null);
   const [editingChatId, setEditingChatId] = useState(null);
   const [editChatTitle, setEditChatTitle] = useState('');
+  const [deleteConfirmChatId, setDeleteConfirmChatId] = useState(null);
 
   // Sidebar state
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -180,9 +181,25 @@ export default function Home() {
     .filter(id => (chats[id].spaceId || 'default') === activeSpaceId)
     .sort((a, b) => (chats[b].updatedAt || 0) - (chats[a].updatedAt || 0));
 
+  const hasEmptyChat = Object.values(chats).some(
+    chat => (chat.spaceId || 'default') === activeSpaceId && chat.messages.length === 0
+  );
+
   // ==================== CHAT ACTIONS ====================
 
   const createNewChat = useCallback(() => {
+    const existingEmptyChat = Object.values(chats).find(
+      chat => (chat.spaceId || 'default') === activeSpaceId && chat.messages.length === 0
+    );
+
+    if (existingEmptyChat) {
+      setActiveChatId(existingEmptyChat.id);
+      setSidebarOpen(false);
+      setServerBusy(null);
+      setTimeout(() => inputRef.current?.focus(), 100);
+      return existingEmptyChat.id;
+    }
+
     const id = generateId();
     const newChat = {
       id,
@@ -198,10 +215,16 @@ export default function Home() {
     setServerBusy(null);
     setTimeout(() => inputRef.current?.focus(), 100);
     return id;
-  }, [activeSpaceId]);
+  }, [activeSpaceId, chats]);
 
   const deleteChat = useCallback((chatId, e) => {
     if (e) e.stopPropagation();
+    setDeleteConfirmChatId(chatId);
+  }, []);
+
+  const confirmDeleteChat = useCallback(() => {
+    if (!deleteConfirmChatId) return;
+    const chatId = deleteConfirmChatId;
     setChats(prev => {
       const updated = { ...prev };
       delete updated[chatId];
@@ -210,7 +233,8 @@ export default function Home() {
     if (activeChatId === chatId) {
       setActiveChatId(null);
     }
-  }, [activeChatId]);
+    setDeleteConfirmChatId(null);
+  }, [deleteConfirmChatId, activeChatId]);
 
   const selectChat = useCallback((chatId) => {
     setActiveChatId(chatId);
@@ -258,16 +282,23 @@ export default function Home() {
 
     // Create new chat if none active
     if (!chatId) {
-      chatId = generateId();
-      const newChat = {
-        id: chatId,
-        title: messageText.slice(0, 50),
-        messages: [],
-        spaceId: activeSpaceId,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-      setChats(prev => ({ ...prev, [chatId]: newChat }));
+      const existingEmptyChat = Object.values(chats).find(
+        chat => (chat.spaceId || 'default') === activeSpaceId && chat.messages.length === 0
+      );
+      if (existingEmptyChat) {
+        chatId = existingEmptyChat.id;
+      } else {
+        chatId = generateId();
+        const newChat = {
+          id: chatId,
+          title: messageText.slice(0, 50),
+          messages: [],
+          spaceId: activeSpaceId,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        setChats(prev => ({ ...prev, [chatId]: newChat }));
+      }
       setActiveChatId(chatId);
     }
 
@@ -627,7 +658,12 @@ export default function Home() {
 
         {/* New Chat Button */}
         <div className="sidebar-actions">
-          <button className="btn-new-chat" onClick={createNewChat}>
+          <button
+            className="btn-new-chat"
+            onClick={createNewChat}
+            disabled={hasEmptyChat}
+            title={hasEmptyChat ? "Write a message in the empty chat first" : "Start a new conversation"}
+          >
             <span>✦</span> New Chat
           </button>
         </div>
@@ -943,6 +979,52 @@ export default function Home() {
                 disabled={!craftName.trim()}
               >
                 {editingSpaceId ? 'Save Changes ✦' : 'Create Space ✦'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmChatId && (
+        <div className="modal-overlay" onClick={() => setDeleteConfirmChatId(null)}>
+          <div className="modal delete-confirm-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+            <div className="modal-header">
+              <h2 className="modal-title">Delete Chat</h2>
+              <button className="modal-close" onClick={() => setDeleteConfirmChatId(null)}>✕</button>
+            </div>
+            <div className="modal-body" style={{ padding: '20px 24px' }}>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '8px' }}>
+                Are you sure you want to delete this chat?
+              </p>
+              {chats[deleteConfirmChatId] && (
+                <div style={{
+                  padding: '10px 14px',
+                  background: 'var(--bg-hover)',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border)',
+                  fontSize: '13px',
+                  color: 'var(--text-primary)',
+                  fontWeight: '500',
+                  marginTop: '8px',
+                  wordBreak: 'break-all'
+                }}>
+                  💬 {chats[deleteConfirmChatId].title || 'New Chat'}
+                </div>
+              )}
+              <p style={{ color: 'var(--error)', fontSize: '12px', marginTop: '12px', fontWeight: '500' }}>
+                ⚠️ This action cannot be undone and will permanently erase all messages in this conversation.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-cancel" onClick={() => setDeleteConfirmChatId(null)}>
+                Cancel
+              </button>
+              <button
+                className="btn-delete-confirm"
+                onClick={confirmDeleteChat}
+              >
+                Delete Chat
               </button>
             </div>
           </div>

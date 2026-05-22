@@ -206,6 +206,16 @@ html, body {
   transform: translateY(0);
 }
 
+.btn-new-chat:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: var(--bg-glass);
+  border-color: var(--border);
+  color: var(--text-tertiary);
+  transform: none;
+  box-shadow: none;
+}
+
 /* ==================== SPACE SELECTOR ==================== */
 
 .space-selector {
@@ -1157,6 +1167,29 @@ html, body {
 .btn-create:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btn-delete-confirm {
+  padding: 10px 24px;
+  background: var(--error);
+  border: none;
+  border-radius: var(--radius-md);
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-family: var(--font-sans);
+}
+
+.btn-delete-confirm:hover {
+  background: #f85555;
+  transform: translateY(-1px);
+  box-shadow: 0 0 15px rgba(248, 113, 113, 0.25);
+}
+
+.btn-delete-confirm:active {
+  transform: translateY(0);
 }
 
 /* ==================== MOBILE OVERLAY ==================== */
