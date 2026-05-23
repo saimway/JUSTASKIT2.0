@@ -1298,3 +1298,45 @@ html, body {
   animation: shimmer 1.5s ease-in-out infinite;
   border-radius: var(--radius-sm);
 }
+
+/* ==================== ROLEPLAY & TYPING ANIMATIONS ==================== */
+
+.roleplay-action {
+  font-style: italic;
+  color: var(--accent);
+  font-weight: 500;
+  padding: 2px 6px;
+  background: rgba(167, 139, 250, 0.06);
+  border-radius: 6px;
+  border: 1px dashed rgba(167, 139, 250, 0.2);
+  display: inline;
+  margin: 0 3px;
+  box-shadow: 0 0 10px rgba(167, 139, 250, 0.05);
+  transition: all var(--transition-fast);
+}
+
+.roleplay-action:hover {
+  background: rgba(167, 139, 250, 0.12);
+  border-color: rgba(167, 139, 250, 0.4);
+  text-shadow: 0 0 8px rgba(167, 139, 250, 0.3);
+  box-shadow: 0 0 12px rgba(167, 139, 250, 0.15);
+  cursor: text;
+}
+
+.typing-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 15px;
+  background-color: var(--accent);
+  margin-left: 4px;
+  animation: cursor-blink 0.8s steps(2, start) infinite;
+  vertical-align: middle;
+  border-radius: 1px;
+  box-shadow: 0 0 8px var(--accent);
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
+}
+

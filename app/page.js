@@ -97,6 +97,8 @@ export default function Home() {
   const [activeChatId, setActiveChatId] = useState(null);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+  const [activeTypingMessageId, setActiveTypingMessageId] = useState(null);
   const [serverBusy, setServerBusy] = useState(null);
   const [editingChatId, setEditingChatId] = useState(null);
   const [editChatTitle, setEditChatTitle] = useState('');
@@ -122,6 +124,19 @@ export default function Home() {
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const busyTimerRef = useRef(null);
+  const typingIntervalRef = useRef(null);
+
+  // Cleanup typing interval on active chat change or unmount
+  useEffect(() => {
+    return () => {
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current);
+        typingIntervalRef.current = null;
+      }
+      setIsTyping(false);
+      setActiveTypingMessageId(null);
+    };
+  }, [activeChatId]);
 
   // ==================== LOAD FROM STORAGE ====================
 
@@ -273,7 +288,7 @@ export default function Home() {
 
   const sendMessage = useCallback(async (text) => {
     const messageText = text || inputText.trim();
-    if (!messageText || isLoading) return;
+    if (!messageText || isLoading || isTyping) return;
 
     setInputText('');
     setServerBusy(null);
@@ -378,11 +393,12 @@ export default function Home() {
         throw new Error(data.error || 'Failed to get response');
       }
 
-      // Add AI response
+      // Add AI response placeholder with empty content
+      const aiMessageId = generateId();
       const aiMessage = {
-        id: generateId(),
+        id: aiMessageId,
         role: 'assistant',
-        content: data.message,
+        content: '',
         timestamp: Date.now(),
       };
 
@@ -394,6 +410,56 @@ export default function Home() {
           updatedAt: Date.now(),
         },
       }));
+
+      setIsLoading(false);
+      setIsTyping(true);
+      setActiveTypingMessageId(aiMessageId);
+
+      const fullText = data.message;
+      let currentLength = 0;
+
+      const totalDuration = Math.min(2500, Math.max(500, fullText.length * 2)); 
+      const intervalMs = 15;
+      const steps = totalDuration / intervalMs;
+      const charsPerStep = Math.max(1, Math.ceil(fullText.length / steps));
+
+      if (typingIntervalRef.current) clearInterval(typingIntervalRef.current);
+
+      typingIntervalRef.current = setInterval(() => {
+        currentLength += charsPerStep;
+        const isFinished = currentLength >= fullText.length;
+        
+        if (isFinished) {
+          currentLength = fullText.length;
+          clearInterval(typingIntervalRef.current);
+          typingIntervalRef.current = null;
+          setIsTyping(false);
+          setActiveTypingMessageId(null);
+        }
+
+        const typedContent = fullText.slice(0, currentLength);
+
+        setChats(prev => {
+          const chat = prev[chatId];
+          if (!chat) return prev;
+          
+          const updatedMessages = chat.messages.map(m => {
+            if (m.id === aiMessageId) {
+              return { ...m, content: typedContent };
+            }
+            return m;
+          });
+
+          return {
+            ...prev,
+            [chatId]: {
+              ...chat,
+              messages: updatedMessages,
+              updatedAt: Date.now(),
+            }
+          };
+        });
+      }, intervalMs);
 
     } catch (error) {
       console.error('Send error:', error);
@@ -416,7 +482,7 @@ export default function Home() {
     }
 
     setIsLoading(false);
-  }, [inputText, isLoading, activeChatId, activeSpaceId, activeSpace, chats]);
+  }, [inputText, isLoading, isTyping, activeChatId, activeSpaceId, activeSpace, chats]);
 
   // ==================== CRAFT SPACE ACTIONS ====================
 
@@ -780,7 +846,7 @@ export default function Home() {
                 )}
                 <div className="message-content">
                   <div className="message-bubble">
-                    <MessageContent content={msg.content} />
+                    <MessageContent content={msg.content} isTyping={msg.id === activeTypingMessageId} />
                   </div>
                   <div className="message-time">
                     {formatMessageTime(msg.timestamp)}
@@ -834,14 +900,14 @@ export default function Home() {
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
                 rows={1}
-                disabled={isLoading}
+                disabled={isLoading || isTyping}
                 id="chat-input"
               />
             </div>
             <button
               className="send-btn"
               onClick={() => sendMessage()}
-              disabled={!inputText.trim() || isLoading}
+              disabled={!inputText.trim() || isLoading || isTyping}
               aria-label="Send message"
               id="send-button"
             >
@@ -1036,7 +1102,7 @@ export default function Home() {
 
 // ==================== MESSAGE CONTENT RENDERER ====================
 
-function MessageContent({ content }) {
+function MessageContent({ content, isTyping }) {
   if (!content) return null;
 
   // Simple markdown-like rendering
@@ -1049,34 +1115,86 @@ function MessageContent({ content }) {
         const codeContent = part.slice(3, -3);
         const firstNewline = codeContent.indexOf('\n');
         const code = firstNewline >= 0 ? codeContent.slice(firstNewline + 1) : codeContent;
-        return <pre key={index}><code>{code}</code></pre>;
+        
+        // Show cursor inside pre block if it's the last part and isTyping
+        const showCursor = isTyping && index === parts.length - 1;
+        return (
+          <pre key={index}>
+            <code>
+              {code}
+              {showCursor && <span className="typing-cursor" />}
+            </code>
+          </pre>
+        );
       }
 
       // Process inline formatting
-      return <span key={index}>{renderInline(part)}</span>;
+      const isLastPart = index === parts.length - 1;
+      return <span key={index}>{renderInline(part, isLastPart && isTyping)}</span>;
     });
   };
 
-  const renderInline = (text) => {
+  const renderInline = (text, showCursor) => {
     const elements = [];
     const lines = text.split('\n');
 
     lines.forEach((line, lineIdx) => {
       if (lineIdx > 0) elements.push(<br key={`br-${lineIdx}`} />);
 
-      // Bold
-      const boldParts = line.split(/(\*\*.*?\*\*)/g);
-      boldParts.forEach((part, partIdx) => {
+      const isLastLine = lineIdx === lines.length - 1;
+
+      // Split by double asterisks first
+      const doubleParts = line.split(/(\*\*.*?\*\*)/g);
+      doubleParts.forEach((part, partIdx) => {
+        const isLastDoublePart = partIdx === doubleParts.length - 1;
+        const shouldShowCursorHere = showCursor && isLastLine && isLastDoublePart;
+
         if (part.startsWith('**') && part.endsWith('**')) {
-          elements.push(<strong key={`${lineIdx}-${partIdx}`}>{part.slice(2, -2)}</strong>);
+          const innerText = part.slice(2, -2);
+          elements.push(
+            <span key={`${lineIdx}-${partIdx}`} className="roleplay-action double-asterisk">
+              {innerText}
+              {shouldShowCursorHere && <span className="typing-cursor" />}
+            </span>
+          );
         } else {
-          // Inline code
-          const codeParts = part.split(/(`[^`]+`)/g);
-          codeParts.forEach((codePart, codeIdx) => {
-            if (codePart.startsWith('`') && codePart.endsWith('`')) {
-              elements.push(<code key={`${lineIdx}-${partIdx}-${codeIdx}`}>{codePart.slice(1, -1)}</code>);
+          // Split by single asterisks
+          const singleParts = part.split(/(\*.*?\*)/g);
+          singleParts.forEach((sPart, sIdx) => {
+            const isLastSinglePart = sIdx === singleParts.length - 1;
+            const shouldShowCursorHereSingle = shouldShowCursorHere && isLastSinglePart;
+
+            if (sPart.startsWith('*') && sPart.endsWith('*')) {
+              const innerText = sPart.slice(1, -1);
+              elements.push(
+                <span key={`${lineIdx}-${partIdx}-${sIdx}`} className="roleplay-action single-asterisk">
+                  {innerText}
+                  {shouldShowCursorHereSingle && <span className="typing-cursor" />}
+                </span>
+              );
             } else {
-              elements.push(codePart);
+              // Inline code
+              const codeParts = sPart.split(/(`[^`]+`)/g);
+              codeParts.forEach((codePart, codeIdx) => {
+                const isLastCodePart = codeIdx === codeParts.length - 1;
+                const shouldShowCursorHereCode = shouldShowCursorHereSingle && isLastCodePart;
+
+                if (codePart.startsWith('`') && codePart.endsWith('`')) {
+                  elements.push(
+                    <code key={`${lineIdx}-${partIdx}-${sIdx}-${codeIdx}`}>
+                      {codePart.slice(1, -1)}
+                      {shouldShowCursorHereCode && <span className="typing-cursor" />}
+                    </code>
+                  );
+                } else {
+                  elements.push(
+                    <span key={`${lineIdx}-${partIdx}-${sIdx}-${codeIdx}-txt`}>
+                      {codePart}
+                      {shouldShowCursorHereCode && <span className="typing-cursor" />}
+                    </span>
+                  );
+                }
+              });
             }
           });
         }
